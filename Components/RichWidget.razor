@@ -1,0 +1,68 @@
+@implements IAsyncDisposable
+@using Microsoft.JSInterop
+
+<div class="m-5 p-5" style="border:1px solid #ddd; border-radius:.5rem;">
+  <h2>@(Params?.Title ?? "Rich Widget")</h2>
+
+  <ul>
+    <li><b>Due (UTC):</b> @Params?.Due.ToString("O")</li>
+    <li><b>Important:</b> @Params?.Important</li>
+    <li><b>Count:</b> @Params?.Count</li>
+    <li><b>Amount:</b> @Params?.Amount</li>
+    <li><b>Customer:</b> @Params?.Customer?.Name (@Params?.Customer?.Vip)</li>
+  </ul>
+
+  <button @onclick="Submit">Submit back to host</button>
+</div>
+
+@code {
+  // Incoming rich params object
+  public record Customer(string Name, bool Vip);
+  public record RichParams(string Title, DateTime Due, bool Important, int Count, decimal Amount, Customer Customer);
+
+  // Outgoing rich payload
+  public record SubmitResult(string Status, DateTime ProcessedAtUtc, int WordCount, bool IsLate, decimal Amount);
+
+  // Individual parameters that match JavaScript input (lowercase to match JS)
+  [Parameter] public string? title { get; set; }
+  [Parameter] public DateTime due { get; set; }
+  [Parameter] public bool important { get; set; }
+  [Parameter] public int count { get; set; }
+  [Parameter] public decimal amount { get; set; }
+  [Parameter] public Customer? customer { get; set; }
+
+  // Host element id for event dispatch
+  [Parameter] public string hostId { get; set; } = "rich-host";
+
+  // Create a Params object from individual parameters for compatibility
+  private RichParams? Params => new RichParams(title ?? "", due, important, count, amount, customer ?? new Customer("", false));
+
+  [Inject] IJSRuntime JS { get; set; } = default!;
+  IJSObjectReference? _module;
+
+  protected override async Task OnAfterRenderAsync(bool firstRender)
+  {
+    if (firstRender)
+      _module = await JS.InvokeAsync<IJSObjectReference>("import", "./js/interop.js");
+  }
+
+  private async Task Submit()
+  {
+    if (_module is null || Params is null) return;
+
+    var result = new SubmitResult(
+      "ok",
+      DateTime.UtcNow,
+      (Params.Title ?? string.Empty).Split(' ', StringSplitOptions.RemoveEmptyEntries).Length,
+      DateTime.UtcNow > Params.Due.ToUniversalTime(),
+      Params.Amount
+    );
+
+    await _module.InvokeVoidAsync("dispatchToHost", hostId, "rich:submit", result);
+  }
+
+  public async ValueTask DisposeAsync()
+  {
+    if (_module is IAsyncDisposable d) await d.DisposeAsync();
+  }
+}

@@ -1,0 +1,1 @@
+window.initializeComponent = (name, parameters) => console.debug('[init] Registered for JS:', name, parameters);
